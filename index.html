@@ -136,7 +136,7 @@
     const buf8 = new Uint8ClampedArray(buf);
     const buf32 = new Uint32Array(buf);
 
-    getJSON('https://gist.githubusercontent.com/perilstar/e0d9982a3c90bc6d2b92bb4d1f839b5f/raw/9c855ecb0d1fa51df3e28b110ac823f6ff5a008a/map.json', (err, data) => {
+    getJSON('map.json', (err, data) => {
       if (err) throw err;
       m = data;
       setInterval(draw, 16);
