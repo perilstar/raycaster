@@ -95,17 +95,8 @@
     });
   </script>
   <script>
-    // TODO:
-    // Create map editor so I don't have to write little scripts to generate circles
-
-
     let m;
     let imageData;
-    let frameCount;
-    let framesInSecond = 0;
-    let fps = 0;
-
-    const TARGET_FRAMERATE = 60;
 
     const RX = 600;
     const RY = 400;
@@ -140,11 +131,6 @@
       if (err) throw err;
       m = data;
       setInterval(draw, 16);
-      setInterval(() => {
-        fps = framesInSecond;
-        framesInSecond = 0;
-        console.log(fps);
-      }, 1000);
     });
 
     function getJSON(url, callback) {
@@ -185,9 +171,6 @@
       renderLines(rd);
       imageData.data.set(buf8);
       ctx.putImageData(imageData, 0, 0);
-
-      frameCount++;
-      framesInSecond++;
     }
 
     // Make sure the angles point to evenly spaced apart points on the projection plane
@@ -297,11 +280,6 @@
             const pStart = (200 - halfHeight + ((k * tsh) | 0)) * 600 + j;
             const pEnd = (200 - halfHeight + (((k + 1) * tsh) | 0)) * 600 + j;
             for (let p = pStart; p < pEnd; p += 600) {
-              // const pixelIndex = (j + 600 * l) * 4;
-              // imageData.data[pixelIndex] = r;
-              // imageData.data[pixelIndex + 1] = g;
-              // imageData.data[pixelIndex + 2] = b;
-              // imageData.data[pixelIndex + 3] = 255;
               buf32[p] =
                 (255 << 24) |
                 (b << 16) |
@@ -363,19 +341,7 @@
             (c[2] << 16) |
             (c[1] << 8) |
             c[0];
-          <!-- const pixelIndex = (x + 600 * y) * 4; -->
-          <!-- imageData.data[pixelIndex] = r; -->
-          <!-- imageData.data[pixelIndex + 1] = g; -->
-          <!-- imageData.data[pixelIndex + 2] = b; -->
-          <!-- imageData.data[pixelIndex + 3] = 255; -->
-
-          <!-- const pixelIndex2 = (x + 600 * (400 - y - 1)) * 4; -->
-          <!-- imageData.data[pixelIndex2] = r; -->
-          <!-- imageData.data[pixelIndex2 + 1] = g; -->
-          <!-- imageData.data[pixelIndex2 + 2] = b; -->
-          <!-- imageData.data[pixelIndex2 + 3] = 255; -->
         }
-
       }
     }
 
