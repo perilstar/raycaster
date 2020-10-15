@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Peril's Raycaster</title>
+  <style>
+    body {
+      background-color: #333;
+    }
+    
+    p {
+      color: white;
+      font-size: 30px;
+    }
+    
+    .container {
+      height: 100%;
+    }
+    
+    .center {
+      margin: 0;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      -ms-transform: translate(-50%, -50%);
+      transform: translate(-50%, -50%);
+      text-align: center;
+    }
+    
+    canvas {
+      display: block;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="center">
+      <canvas width=600 height=400></canvas>
+      <p>Peril's Raycaster - Use WASD to move and turn</p>
+    </div>
+  </div>
+  <script>
+    function Vector(x, y) {
+      this.x = x;
+      this.y = y;
+    }
+    Object.assign(Vector.prototype, {
+      copy: function() {
+        return new this.constructor(this.x, this.y);
+      },
+      add: function(v) {
+        this.x += v.x;
+        this.y += v.y;
+        return this;
+      },
+      sub: function(v) {
+        this.x -= v.x;
+        this.y -= v.y;
+        return this;
+      },
+      mult: function(s) {
+        this.x *= s;
+        this.y *= s;
+        return this;
+      },
+      div: function(s) {
+        this.x /= s;
+        this.y /= s;
+        return this;
+      },
+      dot: function(v) {
+        return this.x * v.x + this.y * v.y;
+      },
+      mag: function() {
+        return Math.sqrt(this.x * this.x + this.y * this.y);
+      },
+      normalize: function() {
+        return this.div(this.mag() || 1);
+      },
+      heading: function() {
+        var angle = Math.atan2(this.y, this.x);
+        if (angle < 0) angle += 2 * Math.PI;
+        return angle;
+      },
+      setMag: function(length) {
+        return this.normalize().mult(length);
+      },
+      setAngle: function(angle) {
+        let mag = this.mag();
+        this.x = Math.cos(angle);
+        this.y = Math.sin(angle);
+        return this.normalize().mult(mag);
+      },
+    });
+  </script>
+  <script>
+    // TODO:
+    // Create map editor so I don't have to write little scripts to generate circles
+
+
+    let m;
+    let imageData;
+    let frameCount;
+    let framesInSecond = 0;
+    let fps = 0;
+
+    const TARGET_FRAMERATE = 60;
+
+    const RX = 600;
+    const RY = 400;
+
+    const MOVEMENT_SPEED = 0.1;
+    const TURN_SPEED = 2;
+    const FOV = 90 * 0.0174533;
+    const DIST = RX / 2 / Math.tan(FOV / 2);
+
+    const PLAYER = {};
+
+    const pressedKeys = {};
+    window.onkeyup = function(e) {
+      pressedKeys[e.keyCode] = false;
+    }
+    window.onkeydown = function(e) {
+      pressedKeys[e.keyCode] = true;
+    }
+
+    PLAYER.p = new Vector(3, 3);
+    PLAYER.h = new Vector(MOVEMENT_SPEED, 0).setAngle(0.01745329252 * 30);
+    PLAYER.b = 1 * MOVEMENT_SPEED
+
+    const canvas = document.querySelector('canvas');
+    const ctx = canvas.getContext('2d');
+
+    const buf = new ArrayBuffer(600 * 400 * 4);
+    const buf8 = new Uint8ClampedArray(buf);
+    const buf32 = new Uint32Array(buf);
+
+    getJSON('https://gist.githubusercontent.com/perilstar/e0d9982a3c90bc6d2b92bb4d1f839b5f/raw/9c855ecb0d1fa51df3e28b110ac823f6ff5a008a/map.json', (err, data) => {
+      if (err) throw err;
+      m = data;
+      setInterval(draw, 16);
+      setInterval(() => {
+        fps = framesInSecond;
+        framesInSecond = 0;
+        console.log(fps);
+      }, 1000);
+    });
+
+    function getJSON(url, callback) {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url, true);
+      xhr.responseType = 'json';
+      xhr.onload = function() {
+        const status = xhr.status;
+        if (status === 200) {
+          callback(null, xhr.response);
+        } else {
+          callback(status, xhr.response);
+        }
+      };
+      xhr.send();
+    };
+
+    function draw() {
+      if (pressedKeys[65]) PLAYER.h.setAngle(PLAYER.h.heading() + 0.01745329252 * (-1 * TURN_SPEED));
+      if (pressedKeys[68]) PLAYER.h.setAngle(PLAYER.h.heading() + 0.01745329252 * (TURN_SPEED));
+
+      if (pressedKeys[87]) {
+        const oldPos = PLAYER.p.copy();
+        PLAYER.p.add(PLAYER.h);
+        collide(oldPos, 1);
+      }
+
+      if (pressedKeys[83]) {
+        const oldPos = PLAYER.p.copy();
+        PLAYER.p.sub(PLAYER.h);
+        collide(oldPos, -1);
+      }
+
+      imageData = ctx.getImageData(0, 0, 600, 400);
+      const angles = getAngles()
+      const rd = castRays(angles);
+      drawFloor(angles, rd);
+      renderLines(rd);
+      imageData.data.set(buf8);
+      ctx.putImageData(imageData, 0, 0);
+
+      frameCount++;
+      framesInSecond++;
+    }
+
+    // Make sure the angles point to evenly spaced apart points on the projection plane
+    function getAngles() {
+      const angles = [...new Array(RX)].map((_, i) => {
+        return Math.atan2(i - RX / 2, DIST);
+      });
+
+      return angles;
+    }
+
+    function castRays(angles) {
+      return angles.map(castRay);
+    }
+
+    function castRay(angle) {
+      const ray = {};
+      ray.x1 = PLAYER.p.x;
+      ray.y1 = PLAYER.p.y;
+      ray.x2 = PLAYER.p.x + Math.cos(PLAYER.h.heading() + angle);
+      ray.y2 = PLAYER.p.y + Math.sin(PLAYER.h.heading() + angle);
+
+      let result = m.s.filter(data => {
+        return orientation(new Vector(data[0], data[1]), new Vector(data[2], data[3]), PLAYER.p) === 1;
+      }).map(data => {
+        const ls = {};
+        ls.x1 = data[0];
+        ls.y1 = data[1];
+        ls.x2 = data[2];
+        ls.y2 = data[3];
+        ls.t = data[4];
+        ls.s = data[5];
+
+        return getIntersectionData(ray, ls, angle);
+      }).reduce((a, c) => {
+        return (c.d !== -1 && c.d < a.d) ? c : a;
+      }, {
+        d: Number.MAX_SAFE_INTEGER
+      });
+      return result;
+    }
+
+    // Horrible abomination that I ported from another one of my projects
+    // Don't be like me, use sensible variable names
+    function getIntersectionData(r, l, angle, checkWithinEndpoints = true) {
+      const i1to2x = r.x2 - r.x1;
+      const i1to2y = r.y2 - r.y1;
+      const i3to4x = l.x2 - l.x1;
+      const i3to4y = l.y2 - l.y1;
+
+      if ((i1to2y / i1to2x) === (i3to4y / i3to4x)) return {
+        d: -1
+      };
+
+      const id = i1to2x * i3to4y - i1to2y * i3to4x;
+
+      if (id === 0) return {
+        d: -1
+      };
+
+      const i3to1x = r.x1 - l.x1;
+      const i3to1y = r.y1 - l.y1;
+      const ir = (i3to1y * i3to4x - i3to1x * i3to4y) / id;
+      const is = (i3to1y * i1to2x - i3to1x * i1to2y) / id;
+
+      if (checkWithinEndpoints && (ir < 0 || is < 0 || is > 1)) return {
+        d: -1
+      };
+
+      const iix = (r.x2 - r.x1) * ir + r.x1;
+      const iiy = (r.y2 - r.y1) * ir + r.y1;
+
+      const dx = iix - r.x1;
+      const dy = iiy - r.y1;
+
+      const idx = iix - l.x1;
+      const idy = iiy - l.y1;
+
+      const io = Math.sqrt(idx * idx + idy * idy);
+      if (l.t === 14) print(l);
+      return {
+        d: Math.sqrt(dx * dx + dy * dy) * Math.cos(angle),
+        x: io,
+        t: l.t,
+        s: l.s,
+        l: l,
+        iix,
+        iiy
+      };
+    }
+
+    function renderLines(rayData) {
+      for (let i = 0; i < rayData.length; i++) {
+        rd = rayData[i];
+        const halfHeight = (600 / rd.d / 2) | 0;
+        const texture = m.t[rd.t];
+        const col = texture[((rd.x * rd.s * 10) | 0) % texture.length];
+        const tsh = 600 / rd.d / 20
+        const jStart = (i * 600 / RX);
+        const jEnd = (i * 600 / RX) + 600 / RX;
+        for (let j = jStart; j < jEnd; j++) {
+          for (let k = 0; k < 20; k += 1) {
+            const c = hslToRgb(m.p[col[k | 0 % 20]]);
+            const r = c[0];
+            const g = c[1];
+            const b = c[2];
+            const pStart = (200 - halfHeight + ((k * tsh) | 0)) * 600 + j;
+            const pEnd = (200 - halfHeight + (((k + 1) * tsh) | 0)) * 600 + j;
+            for (let p = pStart; p < pEnd; p += 600) {
+              // const pixelIndex = (j + 600 * l) * 4;
+              // imageData.data[pixelIndex] = r;
+              // imageData.data[pixelIndex + 1] = g;
+              // imageData.data[pixelIndex + 2] = b;
+              // imageData.data[pixelIndex + 3] = 255;
+              buf32[p] =
+                (255 << 24) |
+                (b << 16) |
+                (g << 8) |
+                r;
+            }
+          }
+        }
+      }
+    }
+
+    function drawFloor(angles, rd) {
+      let minH = Number.MAX_SAFE_INTEGER;
+      for (let i = 0; i < 600; i++) {
+        const halfHeight = (600 / rd[i].d / 2) | 0;
+        if (halfHeight < minH) minH = halfHeight;
+      }
+
+      const texture = m.t[m.f];
+      for (let y = 0; y < 200 - minH; y++) {
+        const ray = {};
+        ray.x1 = Math.cos(angles[0] + PLAYER.h.heading());
+        ray.y1 = Math.sin(angles[0] + PLAYER.h.heading());
+        ray.x2 = Math.cos(angles[angles.length - 1] + PLAYER.h.heading());
+        ray.y2 = Math.sin(angles[angles.length - 1] + PLAYER.h.heading());
+
+        const p = y - 400 / 2;
+        const posZ = -400;
+
+        const rowDistance = posZ / p;
+
+        const floorStepX = rowDistance * (ray.x2 - ray.x1) / 600;
+        const floorStepY = rowDistance * (ray.y2 - ray.y1) / 600;
+
+        let floorX = PLAYER.p.x + rowDistance * ray.x1;
+        let floorY = PLAYER.p.y + rowDistance * ray.y1;
+
+        for (let x = 0; x < 600; ++x) {
+          const tx = (((10 * floorX | 0) % 20) + 20) % 20;
+          const ty = (((10 * floorY | 0) % 20) + 20) % 20;
+          floorX += floorStepX;
+          floorY += floorStepY;
+
+          const t = texture[ty][tx];
+          const hsl = m.p[t];
+          const hslLighter = [hsl[0], hsl[1], hsl[2]];
+          hslLighter[2] = Math.min(hslLighter[2] * 1.5, 100) | 0;
+
+          const c = hslToRgb(hsl);
+          const cl = hslToRgb(hslLighter);
+
+          buf32[x + 600 * y] =
+            (255 << 24) |
+            (cl[2] << 16) |
+            (cl[1] << 8) |
+            cl[0];
+          buf32[x + 600 * (400 - y - 1)] =
+            (255 << 24) |
+            (c[2] << 16) |
+            (c[1] << 8) |
+            c[0];
+          <!-- const pixelIndex = (x + 600 * y) * 4; -->
+          <!-- imageData.data[pixelIndex] = r; -->
+          <!-- imageData.data[pixelIndex + 1] = g; -->
+          <!-- imageData.data[pixelIndex + 2] = b; -->
+          <!-- imageData.data[pixelIndex + 3] = 255; -->
+
+          <!-- const pixelIndex2 = (x + 600 * (400 - y - 1)) * 4; -->
+          <!-- imageData.data[pixelIndex2] = r; -->
+          <!-- imageData.data[pixelIndex2 + 1] = g; -->
+          <!-- imageData.data[pixelIndex2 + 2] = b; -->
+          <!-- imageData.data[pixelIndex2 + 3] = 255; -->
+        }
+
+      }
+    }
+
+    function collide(oldPos, dir) {
+      let closest = m.s
+        .filter(ls => orientation(new Vector(ls[0], ls[1]), new Vector(ls[2], ls[3]), oldPos) === 1)
+        .map(ls => distToLS(ls, PLAYER.p))
+        .filter(d => d[0] < PLAYER.b);
+      closest = closest
+        .reduce((a, c) => {
+          return (c[0] !== -1 && c[0] < a[0]) ? c : a;
+        }, [Number.MAX_SAFE_INTEGER, null]);
+      if (closest[0] < PLAYER.b) {
+        const l = closest[1];
+        const normal = new Vector((-1 * (l[3] - l[1])), l[2] - l[0]).normalize();
+        normal.mult(orientation(new Vector(l[0], l[1]), new Vector(l[2], l[3]), oldPos));
+
+        const intersectionLine = {};
+        intersectionLine.x1 = l[0] + normal.x * -1 * dir * PLAYER.b;
+        intersectionLine.y1 = l[1] + normal.y * -1 * dir * PLAYER.b;
+        intersectionLine.x2 = l[2] + normal.x * -1 * dir * PLAYER.b;
+        intersectionLine.y2 = l[3] + normal.y * -1 * dir * PLAYER.b;
+
+        const ray = {};
+        ray.x1 = oldPos.x;
+        ray.y1 = oldPos.y;
+        ray.x2 = PLAYER.p.x;
+        ray.y2 = PLAYER.p.y;
+
+        const collision = getIntersectionData(ray, intersectionLine, 0, false);
+        const collisionLocation = new Vector(collision.iix, collision.iiy);
+
+        const length = PLAYER.p.copy().sub(collisionLocation).dot(normal);
+
+        PLAYER.p.add(normal.copy().mult(-1).mult(dir).mult(length));
+
+        let collisionDuringSlide = false;
+
+        for (const ls of m.s) {
+          const thing = distToLS(ls, PLAYER.p);
+          if (thing[0] < PLAYER.b * 0.8) {
+            collisionDuringSlide = true;
+          }
+        }
+
+        if (collisionDuringSlide) {
+          PLAYER.p = oldPos;
+        }
+
+        return;
+      }
+    }
+
+    function distToLS(l, c) {
+      const p1 = new Vector(l[0], l[1]);
+      const p2 = new Vector(l[2], l[3]);
+      const ia = c.x - p1.x;
+      const ib = c.y - p1.y;
+      const ic = p2.x - p1.x;
+      const id = p2.y - p1.y;
+
+      const dot = ia * ic + ib * id;
+      const len_sq = ic * ic + id * id;
+
+      let param = -1;
+      if (len_sq != 0) param = dot / len_sq;
+
+      let xx, yy;
+
+      if (param < 0) {
+        xx = p1.x;
+        yy = p1.y;
+      } else if (param > 1) {
+        xx = p2.x;
+        yy = p2.y;
+      } else {
+        xx = p1.x + param * ic;
+        yy = p1.y + param * id;
+      }
+
+      const dx = c.x - xx;
+      const dy = c.y - yy;
+
+      const d = Math.sqrt(dx * dx + dy * dy);
+      return [d, l];
+    }
+
+    function hslToRgb(hsl) {
+      const h = hsl[0] / 360;
+      const s = hsl[1] / 100;
+      const l = hsl[2] / 100;
+      let r, g, b;
+
+      if (s == 0) {
+        r = g = b = l; // achromatic
+      } else {
+        const hue2rgb = function hue2rgb(p, q, t) {
+          if (t < 0) t += 1;
+          if (t > 1) t -= 1;
+          if (t < 1 / 6) return p + (q - p) * 6 * t;
+          if (t < 1 / 2) return q;
+          if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+          return p;
+        }
+
+        var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        var p = 2 * l - q;
+        r = hue2rgb(p, q, h + 1 / 3);
+        g = hue2rgb(p, q, h);
+        b = hue2rgb(p, q, h - 1 / 3);
+      }
+
+      return [r * 255 | 0, g * 255 | 0, b * 255 | 0];
+    }
+
+    function orientation(a, b, c) {
+      return ((b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y)) < 0 ? 1 : -1;
+    }
+  </script>
+</body>
+
+</html>
