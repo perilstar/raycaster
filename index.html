@@ -36,6 +36,9 @@
 <body>
   <div class="container">
     <div class="center">
+      <div style="text-align: left;">
+        <p id="fps" style="font-size: 15px">FPS: 0</p>
+      </div>
       <canvas width=600 height=400></canvas>
       <p>Peril's Raycaster - Use WASD to move and turn</p>
     </div>
@@ -97,6 +100,7 @@
   <script>
     let m;
     let imageData;
+    let framesInSecond = 0;
 
     const RX = 600;
     const RY = 400;
@@ -107,6 +111,8 @@
     const DIST = RX / 2 / Math.tan(FOV / 2);
 
     const PLAYER = {};
+    
+    const fpsDisplay = document.getElementById('fps');
 
     const pressedKeys = {};
     window.onkeyup = function(e) {
@@ -130,7 +136,12 @@
     getJSON('map.json', (err, data) => {
       if (err) throw err;
       m = data;
-      setInterval(draw, 16);
+      setInterval(move, 16);
+      setInterval(() => {
+        fpsDisplay.innerHTML = `FPS: ${framesInSecond}`;
+        framesInSecond = 0;
+      }, 1000);
+      requestAnimationFrame(draw);
     });
 
     function getJSON(url, callback) {
@@ -147,8 +158,8 @@
       };
       xhr.send();
     };
-
-    function draw() {
+    
+    function move() {
       if (pressedKeys[65]) PLAYER.h.setAngle(PLAYER.h.heading() + 0.01745329252 * (-1 * TURN_SPEED));
       if (pressedKeys[68]) PLAYER.h.setAngle(PLAYER.h.heading() + 0.01745329252 * (TURN_SPEED));
 
@@ -163,7 +174,9 @@
         PLAYER.p.sub(PLAYER.h);
         collide(oldPos, -1);
       }
+    }
 
+    function draw() {
       imageData = ctx.getImageData(0, 0, 600, 400);
       const angles = getAngles()
       const rd = castRays(angles);
@@ -171,6 +184,8 @@
       renderLines(rd);
       imageData.data.set(buf8);
       ctx.putImageData(imageData, 0, 0);
+      framesInSecond++;
+      requestAnimationFrame(draw);
     }
 
     // Make sure the angles point to evenly spaced apart points on the projection plane
