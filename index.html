@@ -389,7 +389,7 @@
         const collision = getIntersectionData(ray, intersectionLine, 0, false);
         const collisionLocation = new Vector(collision.iix, collision.iiy);
 
-        const length = PLAYER.p.copy().sub(collisionLocation).dot(normal);
+        const length = PLAYER.p.copy().mult(dir).sub(collisionLocation).dot(normal);
 
         PLAYER.p.add(normal.copy().mult(-1).mult(dir).mult(length));
 
