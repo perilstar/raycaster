@@ -375,10 +375,10 @@
         normal.mult(orientation(new Vector(l[0], l[1]), new Vector(l[2], l[3]), oldPos));
 
         const intersectionLine = {};
-        intersectionLine.x1 = l[0] + normal.x * -1 * dir * PLAYER.b;
-        intersectionLine.y1 = l[1] + normal.y * -1 * dir * PLAYER.b;
-        intersectionLine.x2 = l[2] + normal.x * -1 * dir * PLAYER.b;
-        intersectionLine.y2 = l[3] + normal.y * -1 * dir * PLAYER.b;
+        intersectionLine.x1 = l[0] + normal.x * -1 * PLAYER.b;
+        intersectionLine.y1 = l[1] + normal.y * -1 * PLAYER.b;
+        intersectionLine.x2 = l[2] + normal.x * -1 * PLAYER.b;
+        intersectionLine.y2 = l[3] + normal.y * -1 * PLAYER.b;
 
         const ray = {};
         ray.x1 = oldPos.x;
@@ -389,7 +389,7 @@
         const collision = getIntersectionData(ray, intersectionLine, 0, false);
         const collisionLocation = new Vector(collision.iix, collision.iiy);
 
-        const length = PLAYER.p.copy().mult(dir).sub(collisionLocation).dot(normal);
+        const length = PLAYER.p.copy().sub(collisionLocation).dot(normal) * dir;
 
         PLAYER.p.add(normal.copy().mult(-1).mult(dir).mult(length));
 
@@ -405,7 +405,7 @@
         if (collisionDuringSlide) {
           PLAYER.p = oldPos;
         }
-
+        
         return;
       }
     }
