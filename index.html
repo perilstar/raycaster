@@ -67,7 +67,7 @@
 
     float hardScan = -8.0;
     float hardPix = -2.0;
-    vec2 warp = vec2(1.0 / 32.0, 1.0 / 24.0);
+    vec2 warp = vec2(1.0 / 16.0, 1.0 / 12.0);
     float maskDark = 0.5;
     float maskLight = 1.5;
 
@@ -136,7 +136,7 @@
       vec2 uv = vTexCoord.xy;
       uv *= 1.0 - uv.yx;
       float vig = uv.x * uv.y * 20.0;
-      vig = pow(vig, 0.35);
+      vig = pow(vig, 0.8);
       return vec3(vig);
     }
 
@@ -166,9 +166,10 @@
     varying vec2 vTexCoord;
         
     float blurSize = 1.0/512.0;
+    float hdrThreshold = 0.5;
     
     vec3 SampleGlow(vec2 offset, float scale) {
-      return texture2D(renderedBuffer, vec2(vTexCoord.x + offset.x*blurSize, vTexCoord.y + offset.y*blurSize)).rgb * scale;
+      return max(texture2D(renderedBuffer, vec2(vTexCoord.x + offset.x*blurSize, vTexCoord.y + offset.y*blurSize)).rgb - hdrThreshold, 0.0) * scale;
     }
     
     vec3 GetGlow() {
@@ -200,7 +201,7 @@
     void main() {
       gl_FragColor.rgb = texture2D(renderedBuffer, vTexCoord).rgb;
       gl_FragColor.a = 1.0;
-      gl_FragColor.rgb += 0.2 * GetGlow();
+      gl_FragColor.rgb += 2.0 * GetGlow();
     }
   </script>
   <script>
@@ -300,6 +301,15 @@
       if (gl === null) {
         alert("Unable to initialize WebGL. Your browser or machine may not support it.");
         return;
+      }
+      
+      const body = document.getElementsByTagName('body')[0];
+      const sizeX = window.innerWidth || document.clientWidth || body.clientWidth;
+      const sizeY = window.innerHeight|| document.clientHeight|| body.clientHeight;
+      
+      if (sizeX < 1400 || sizeY < 900) {
+        canvas.setAttribute("width", 900);
+        canvas.setAttribute("height", 600);
       }
       
       function createShader(gl, source, type) {
