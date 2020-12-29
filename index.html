@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html>
 
@@ -5,12 +6,12 @@
   <title>Peril's Raycaster</title>
   <style>
     body {
-      background-color: #333;
+      background-color: black;
     }
     
     p {
       color: white;
-      font-size: 30px;
+      font-size: 25px;
     }
     
     .container {
@@ -39,10 +40,169 @@
       <div style="text-align: left;">
         <p id="fps" style="font-size: 15px">FPS: 0</p>
       </div>
-      <canvas width=600 height=400></canvas>
+      <canvas width=1200 height=800></canvas>
       <p>Peril's Raycaster - Use WASD to move and turn</p>
     </div>
   </div>
+  <script id="vertex-shader-2d" type="x-shader/x-vertex">
+    attribute vec2 aPosition;
+    attribute vec2 aTexCoord;
+
+    varying vec2 vTexCoord;
+
+    void main() {
+      gl_Position = vec4(aPosition * 2.0 + 1.0, 0.0, 1.0);
+
+      vTexCoord = aTexCoord * 2.0;
+    }
+  </script>
+  <script id="fragment-shader-2d" type="x-shader/x-fragment">
+    precision mediump float;
+
+    uniform sampler2D iPixelBuffer;
+    uniform vec2 iResolution;
+    varying vec2 vTexCoord;
+
+    vec2 res = iResolution.xy / 6.0;
+
+    float hardScan = -8.0;
+    float hardPix = -2.0;
+    vec2 warp = vec2(1.0 / 32.0, 1.0 / 24.0);
+    float maskDark = 0.5;
+    float maskLight = 1.5;
+
+    vec3 Fetch(vec2 pos, vec2 off) {
+      pos = floor(pos * res + off) / res;
+      if (max(abs(pos.x - 0.5), abs(pos.y - 0.5)) > 0.5) return vec3(0.0, 0.0, 0.0);
+      return texture2D(iPixelBuffer, pos.xy, -16.0).rgb; }
+
+    vec2 Dist(vec2 pos) { pos = pos * res; return - ((pos - floor(pos)) - vec2(0.5)); }
+    float Gaus(float pos, float scale) { return exp2(scale * pos * pos); }
+
+    vec3 Horz3(vec2 pos, float off) {
+      vec3 b = Fetch(pos, vec2(-1.0, off));
+      vec3 c = Fetch(pos, vec2(0.0, off));
+      vec3 d = Fetch(pos, vec2(1.0, off));
+      float dst = Dist(pos).x;
+      float scale = hardPix;
+      float wb = Gaus(dst - 1.0, scale);
+      float wc = Gaus(dst + 0.0, scale);
+      float wd = Gaus(dst + 1.0, scale);
+      return (b * wb + c * wc + d * wd) / (wb + wc + wd); }
+
+    vec3 Horz5(vec2 pos, float off) {
+      vec3 a = Fetch(pos, vec2(-2.0, off));
+      vec3 b = Fetch(pos, vec2(-1.0, off));
+      vec3 c = Fetch(pos, vec2(0.0, off));
+      vec3 d = Fetch(pos, vec2(1.0, off));
+      vec3 e = Fetch(pos, vec2(2.0, off));
+      float dst = Dist(pos).x;
+      float scale = hardPix;
+      float wa = Gaus(dst - 2.0, scale);
+      float wb = Gaus(dst - 1.0, scale);
+      float wc = Gaus(dst + 0.0, scale);
+      float wd = Gaus(dst + 1.0, scale);
+      float we = Gaus(dst + 2.0, scale);
+      return (a * wa + b * wb + c * wc + d * wd + e * we) / (wa + wb + wc + wd + we); }
+
+    float Scan(vec2 pos, float off) {
+      float dst = Dist(pos).y;
+      return Gaus(dst + off, hardScan); }
+
+    vec3 Tri(vec2 pos) {
+      vec3 a = Horz3(pos, -1.0);
+      vec3 b = Horz5(pos, 0.0);
+      vec3 c = Horz3(pos, 1.0);
+      float wa = Scan(pos, -1.0);
+      float wb = Scan(pos, 0.0);
+      float wc = Scan(pos, 1.0);
+      return a * wa + b * wb + c * wc; }
+
+    vec2 Warp(vec2 pos) {
+      pos = pos * 2.0 - 1.0;
+      pos *= vec2(1.0 + (pos.y * pos.y) * warp.x, 1.0 + (pos.x * pos.x) * warp.y);
+      return pos * 0.5 + 0.5; }
+
+    vec3 Mask(vec2 pos) {
+      pos.x += pos.y * 1.5;
+      vec3 mask = vec3(maskDark, maskDark, maskDark);
+      pos.x = fract(pos.x / 3.0);
+      if (pos.x < 1.0 / 3.0) mask.r = maskLight;
+      else if (pos.x < 2.0 / 3.0) mask.g = maskLight;
+      else mask.b = maskLight;
+      return mask; }
+
+    vec3 vignette() {
+      vec2 uv = vTexCoord.xy;
+      uv *= 1.0 - uv.yx;
+      float vig = uv.x * uv.y * 20.0;
+      vig = pow(vig, 0.35);
+      return vec3(vig);
+    }
+
+    void main() {
+      vec2 pos = Warp(vTexCoord);
+      gl_FragColor.rgb = Tri(pos).rgb * Mask(vTexCoord.xy * iResolution);
+      gl_FragColor.a = 1.0;
+      gl_FragColor.rgb *= vignette();
+    }
+  </script>
+  <script id="vertex-shader-2d-2" type="x-shader/x-vertex">
+    attribute vec2 aPosition;
+    attribute vec2 aTexCoord;
+
+    varying vec2 vTexCoord;
+
+    void main() {
+      gl_Position = vec4(aPosition * 1.0, 0.0, 1.0);
+      vTexCoord = aTexCoord;
+    }
+  </script>
+  <script id="fragment-shader-2d-2" type="x-shader/x-fragment">
+    precision mediump float;
+
+    uniform sampler2D renderedBuffer;
+    uniform vec2 iResolution;
+    varying vec2 vTexCoord;
+        
+    float blurSize = 1.0/512.0;
+    
+    vec3 SampleGlow(vec2 offset, float scale) {
+      return texture2D(renderedBuffer, vec2(vTexCoord.x + offset.x*blurSize, vTexCoord.y + offset.y*blurSize)).rgb * scale;
+    }
+    
+    vec3 GetGlow() {
+      vec3 sum = vec3(0.0);
+    
+      sum += SampleGlow(vec2(-4.0, 0.0), 0.05);
+      sum += SampleGlow(vec2(-3.0, 0.0), 0.09);
+      sum += SampleGlow(vec2(-2.0, 0.0), 0.12);
+      sum += SampleGlow(vec2(-1.0, 0.0), 0.15);
+      sum += SampleGlow(vec2(0.0, 0.0), 0.16);
+      sum += SampleGlow(vec2(1.0, 0.0), 0.15);
+      sum += SampleGlow(vec2(2.0, 0.0), 0.12);
+      sum += SampleGlow(vec2(3.0, 0.0), 0.09);
+      sum += SampleGlow(vec2(4.0, 0.0), 0.05);
+     
+      sum += SampleGlow(vec2(0.0, -4.0), 0.05);
+      sum += SampleGlow(vec2(0.0, -3.0), 0.09);
+      sum += SampleGlow(vec2(0.0, -2.0), 0.12);
+      sum += SampleGlow(vec2(0.0, -1.0), 0.15);
+      sum += SampleGlow(vec2(0.0, 0.0), 0.16);
+      sum += SampleGlow(vec2(0.0, 1.0), 0.15);
+      sum += SampleGlow(vec2(0.0, 2.0), 0.12);
+      sum += SampleGlow(vec2(0.0, 3.0), 0.09);
+      sum += SampleGlow(vec2(0.0, 4.0), 0.05);
+      
+      return sum;
+    }
+
+    void main() {
+      gl_FragColor.rgb = texture2D(renderedBuffer, vTexCoord).rgb;
+      gl_FragColor.a = 1.0;
+      gl_FragColor.rgb += 0.2 * GetGlow();
+    }
+  </script>
   <script>
     function Vector(x, y) {
       this.x = x;
@@ -95,386 +255,553 @@
         this.y = Math.sin(angle);
         return this.normalize().mult(mag);
       },
+      abs: function() {
+        this.x = Math.abs(this.x);
+        this.y = Math.abs(this.y);
+        return this;
+      }
     });
   </script>
   <script>
-    let m;
-    let imageData;
-    let framesInSecond = 0;
+    (() => {
+      let m;
+      let imageData;
+      let framesInSecond = 0;
 
-    const RX = 600;
-    const RY = 400;
+      const RX = 600;
+      const RY = 400;
 
-    const MOVEMENT_SPEED = 0.1;
-    const TURN_SPEED = 2;
-    const FOV = 90 * 0.0174533;
-    const DIST = RX / 2 / Math.tan(FOV / 2);
+      const MOVEMENT_SPEED = 0.1;
+      const TURN_SPEED = 2;
+      const FOV = 90 * 0.0174533;
+      const DIST = RX / 2 / Math.tan(FOV / 2);
 
-    const PLAYER = {};
-    
-    const fpsDisplay = document.getElementById('fps');
+      const PLAYER = {};
+      
+      const fpsDisplay = document.getElementById('fps');
+      
+      const DEBUG = {};
 
-    const pressedKeys = {};
-    window.onkeyup = function(e) {
-      pressedKeys[e.keyCode] = false;
-    }
-    window.onkeydown = function(e) {
-      pressedKeys[e.keyCode] = true;
-    }
+      const pressedKeys = {};
+      window.onkeyup = function(e) {
+        pressedKeys[e.keyCode] = false;
+      }
+      window.onkeydown = function(e) {
+        pressedKeys[e.keyCode] = true;
+      }
 
-    PLAYER.p = new Vector(3, 3);
-    PLAYER.h = new Vector(MOVEMENT_SPEED, 0).setAngle(0.01745329252 * 30);
-    PLAYER.b = 1 * MOVEMENT_SPEED
+      PLAYER.p = new Vector(3, 3);
+      PLAYER.h = new Vector(MOVEMENT_SPEED, 0).setAngle(0.01745329252 * 30);
+      PLAYER.b = 1 * MOVEMENT_SPEED
 
-    const canvas = document.querySelector('canvas');
-    const ctx = canvas.getContext('2d');
+      const canvas = document.querySelector('canvas');
+      const gl = canvas.getContext('webgl');
+      
+      if (gl === null) {
+        alert("Unable to initialize WebGL. Your browser or machine may not support it.");
+        return;
+      }
+      
+      function createShader(gl, source, type) {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
 
-    const buf = new ArrayBuffer(600 * 400 * 4);
-    const buf8 = new Uint8ClampedArray(buf);
-    const buf32 = new Uint32Array(buf);
-
-    getJSON('map.json', (err, data) => {
-      if (err) throw err;
-      m = data;
-      setInterval(move, 16);
-      setInterval(() => {
-        fpsDisplay.innerHTML = `FPS: ${framesInSecond}`;
-        framesInSecond = 0;
-      }, 1000);
-      requestAnimationFrame(draw);
-    });
-
-    function getJSON(url, callback) {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', url, true);
-      xhr.responseType = 'json';
-      xhr.onload = function() {
-        const status = xhr.status;
-        if (status === 200) {
-          callback(null, xhr.response);
-        } else {
-          callback(status, xhr.response);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+          var info = gl.getShaderInfoLog(shader);
+          throw 'Could not compile WebGL program. \n\n' + info;
         }
-      };
-      xhr.send();
-    };
-    
-    function move() {
-      if (pressedKeys[65]) PLAYER.h.setAngle(PLAYER.h.heading() + 0.01745329252 * (-1 * TURN_SPEED));
-      if (pressedKeys[68]) PLAYER.h.setAngle(PLAYER.h.heading() + 0.01745329252 * (TURN_SPEED));
+        return shader;
+      }
+      
+      const vert = createShader(gl, document.getElementById('vertex-shader-2d').text, gl.VERTEX_SHADER);
+      const frag = createShader(gl, document.getElementById('fragment-shader-2d').text, gl.FRAGMENT_SHADER);
 
-      if (pressedKeys[87]) {
-        const oldPos = PLAYER.p.copy();
-        PLAYER.p.add(PLAYER.h);
-        collide(oldPos, 1);
+      const vert2 = createShader(gl, document.getElementById('vertex-shader-2d-2').text, gl.VERTEX_SHADER);
+      const frag2 = createShader(gl, document.getElementById('fragment-shader-2d-2').text, gl.FRAGMENT_SHADER);
+
+      const program = gl.createProgram();
+      const program2 = gl.createProgram();
+
+      gl.attachShader(program, vert);
+      gl.attachShader(program, frag);
+
+      gl.attachShader(program2, vert2);
+      gl.attachShader(program2, frag2);
+
+      gl.linkProgram(program);
+      gl.linkProgram(program2);
+
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        var info = gl.getProgramInfoLog(program);
+        throw 'Could not compile WebGL program 1. \n\n' + info;
       }
 
-      if (pressedKeys[83]) {
-        const oldPos = PLAYER.p.copy();
-        PLAYER.p.sub(PLAYER.h);
-        collide(oldPos, -1);
+      if (!gl.getProgramParameter(program2, gl.LINK_STATUS)) {
+        var info = gl.getProgramInfoLog(program2);
+        throw 'Could not compile WebGL program 2. \n\n' + info;
       }
-    }
 
-    function draw() {
-      imageData = ctx.getImageData(0, 0, 600, 400);
-      const angles = getAngles()
-      const rd = castRays(angles);
-      drawFloor(angles, rd);
-      renderLines(rd);
-      imageData.data.set(buf8);
-      ctx.putImageData(imageData, 0, 0);
-      framesInSecond++;
-      requestAnimationFrame(draw);
-    }
 
-    // Make sure the angles point to evenly spaced apart points on the projection plane
-    function getAngles() {
-      const angles = [...new Array(RX)].map((_, i) => {
-        return Math.atan2(i - RX / 2, DIST);
+      const buf = new ArrayBuffer(RX * RY * 4);
+      const buf8 = new Uint8Array(buf);
+      const buf32 = new Uint32Array(buf);
+
+      const positionLocation = gl.getAttribLocation(program, "aPosition");
+      const texcoordLocation = gl.getAttribLocation(program, "aTexCoord");
+
+      const positionLocation2 = gl.getAttribLocation(program2, "aPosition");
+      const texcoordLocation2 = gl.getAttribLocation(program2, "aTexCoord");
+
+      const positionBuffer = gl.createBuffer();
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+
+      function setRectangle(gl, x, y, toX, toY) {
+        const x1 = x;
+        const x2 = toX;
+        const y1 = y;
+        const y2 = toY;
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+          x1, y1,
+          x2, y1,
+          x1, y2,
+          x1, y2,
+          x2, y1,
+          x2, y2,
+        ]), gl.STATIC_DRAW);
+      }
+
+      <!-- setRectangle(gl, -0.9, -0.9, 0.9, 0.9); -->
+      setRectangle(gl, -1, -1, 1, 1);
+
+      const texcoordBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+        0.0, 0.0,
+        1.0, 0.0,
+        0.0, 1.0,
+        0.0, 1.0,
+        1.0, 0.0,
+        1.0, 1.0,
+      ]), gl.STATIC_DRAW);
+
+      const texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+
+      const renderTexture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, renderTexture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.canvas.width, gl.canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+      const fb = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      const attachmentPoint = gl.COLOR_ATTACHMENT0;
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, attachmentPoint, gl.TEXTURE_2D, renderTexture, 0);
+
+
+      const resolutionLocation = gl.getUniformLocation(program, "iResolution");
+      const resolutionLocation2 = gl.getUniformLocation(program2, "iResolution");
+
+      gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+
+      gl.useProgram(program);
+      gl.enableVertexAttribArray(positionLocation);
+      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+      gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+      gl.enableVertexAttribArray(texcoordLocation);
+      gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer);
+      gl.vertexAttribPointer(texcoordLocation, 2, gl.FLOAT, false, 0, 0);
+
+      gl.useProgram(program2);
+      gl.enableVertexAttribArray(positionLocation2);
+      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+      gl.vertexAttribPointer(positionLocation2, 2, gl.FLOAT, false, 0, 0);
+
+      gl.enableVertexAttribArray(texcoordLocation2);
+      gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer);
+      gl.vertexAttribPointer(texcoordLocation2, 2, gl.FLOAT, false, 0, 0);
+
+      gl.useProgram(program);
+      gl.uniform2f(resolutionLocation, gl.canvas.width, gl.canvas.height);
+      
+      gl.useProgram(program2);
+      gl.uniform2f(resolutionLocation2, gl.canvas.width, gl.canvas.height);
+           
+      getJSON('map.json', (err, data) => {
+        if (err) throw err;
+        m = data;
+        setInterval(move, 16);
+        setInterval(() => {
+          fpsDisplay.innerHTML = `FPS: ${framesInSecond}`;
+          framesInSecond = 0;
+        }, 1000);
+        requestAnimationFrame(draw);
       });
 
-      return angles;
-    }
-
-    function castRays(angles) {
-      return angles.map(castRay);
-    }
-
-    function castRay(angle) {
-      const ray = {};
-      ray.x1 = PLAYER.p.x;
-      ray.y1 = PLAYER.p.y;
-      ray.x2 = PLAYER.p.x + Math.cos(PLAYER.h.heading() + angle);
-      ray.y2 = PLAYER.p.y + Math.sin(PLAYER.h.heading() + angle);
-
-      let result = m.s.filter(data => {
-        return orientation(new Vector(data[0], data[1]), new Vector(data[2], data[3]), PLAYER.p) === 1;
-      }).map(data => {
-        const ls = {};
-        ls.x1 = data[0];
-        ls.y1 = data[1];
-        ls.x2 = data[2];
-        ls.y2 = data[3];
-        ls.t = data[4];
-        ls.s = data[5];
-
-        return getIntersectionData(ray, ls, angle);
-      }).reduce((a, c) => {
-        return (c.d !== -1 && c.d < a.d) ? c : a;
-      }, {
-        d: Number.MAX_SAFE_INTEGER
-      });
-      return result;
-    }
-
-    // Horrible abomination that I ported from another one of my projects
-    // Don't be like me, use sensible variable names
-    function getIntersectionData(r, l, angle, checkWithinEndpoints = true) {
-      const i1to2x = r.x2 - r.x1;
-      const i1to2y = r.y2 - r.y1;
-      const i3to4x = l.x2 - l.x1;
-      const i3to4y = l.y2 - l.y1;
-
-      if ((i1to2y / i1to2x) === (i3to4y / i3to4x)) return {
-        d: -1
+      function getJSON(url, callback) {
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', url, true);
+        xhr.responseType = 'json';
+        xhr.onload = function() {
+          const status = xhr.status;
+          if (status === 200) {
+            callback(null, xhr.response);
+          } else {
+            callback(status, xhr.response);
+          }
+        };
+        xhr.send();
       };
+      
+      function move() {
+        if (pressedKeys[65]) PLAYER.h.setAngle(PLAYER.h.heading() + 0.01745329252 * (-1 * TURN_SPEED));
+        if (pressedKeys[68]) PLAYER.h.setAngle(PLAYER.h.heading() + 0.01745329252 * (TURN_SPEED));
 
-      const id = i1to2x * i3to4y - i1to2y * i3to4x;
+        if (pressedKeys[87]) {
+          const oldPos = PLAYER.p.copy();
+          PLAYER.p.add(PLAYER.h);
+          collide(oldPos, 1);
+        }
 
-      if (id === 0) return {
-        d: -1
-      };
+        if (pressedKeys[83]) {
+          const oldPos = PLAYER.p.copy();
+          PLAYER.p.sub(PLAYER.h);
+          collide(oldPos, -1);
+        }
+      }
 
-      const i3to1x = r.x1 - l.x1;
-      const i3to1y = r.y1 - l.y1;
-      const ir = (i3to1y * i3to4x - i3to1x * i3to4y) / id;
-      const is = (i3to1y * i1to2x - i3to1x * i1to2y) / id;
+      function draw() {
+        const angles = getAngles()
+        const rd = castRays(angles);
+        drawFloor(angles, rd);
+        renderLines(rd);
+        
+        // render CPU-generated texture to framebuffer object
+        gl.useProgram(program);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fb); // render to "fb"
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, RX, RY, 0, gl.RGBA, gl.UNSIGNED_BYTE, buf8);
+        gl.drawArrays(gl.TRIANGLES, 0, 3 * 2);
 
-      if (checkWithinEndpoints && (ir < 0 || is < 0 || is > 1)) return {
-        d: -1
-      };
+        // Render texture to canvas
+        gl.useProgram(program2);
+        gl.bindTexture(gl.TEXTURE_2D, renderTexture);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null); // render to canvas
+        gl.drawArrays(gl.TRIANGLES, 0, 3 * 2);
+        
+        framesInSecond++;
+        requestAnimationFrame(draw);
+      }
 
-      const iix = (r.x2 - r.x1) * ir + r.x1;
-      const iiy = (r.y2 - r.y1) * ir + r.y1;
+      // Make sure the angles point to evenly spaced apart points on the projection plane
+      function getAngles() {
+        const angles = [...new Array(RX)].map((_, i) => {
+          return Math.atan2(i - RX / 2, DIST);
+        });
 
-      const dx = iix - r.x1;
-      const dy = iiy - r.y1;
+        return angles;
+      }
 
-      const idx = iix - l.x1;
-      const idy = iiy - l.y1;
+      function castRays(angles) {
+        return angles.map(castRay);
+      }
 
-      const io = Math.sqrt(idx * idx + idy * idy);
-      if (l.t === 14) print(l);
-      return {
-        d: Math.sqrt(dx * dx + dy * dy) * Math.cos(angle),
-        x: io,
-        t: l.t,
-        s: l.s,
-        l: l,
-        iix,
-        iiy
-      };
-    }
+      function castRay(angle) {
+        const ray = {};
+        ray.x1 = PLAYER.p.x;
+        ray.y1 = PLAYER.p.y;
+        ray.x2 = PLAYER.p.x + Math.cos(PLAYER.h.heading() + angle);
+        ray.y2 = PLAYER.p.y + Math.sin(PLAYER.h.heading() + angle);
 
-    function renderLines(rayData) {
-      for (let i = 0; i < rayData.length; i++) {
-        rd = rayData[i];
-        const halfHeight = (600 / rd.d / 2) | 0;
-        const texture = m.t[rd.t];
-        const col = texture[((rd.x * rd.s * 10) | 0) % texture.length];
-        const tsh = 600 / rd.d / 20
-        const jStart = (i * 600 / RX);
-        const jEnd = (i * 600 / RX) + 600 / RX;
-        for (let j = jStart; j < jEnd; j++) {
-          for (let k = 0; k < 20; k += 1) {
-            const c = hslToRgb(m.p[col[k | 0 % 20]]);
-            const r = c[0];
-            const g = c[1];
-            const b = c[2];
-            const pStart = (200 - halfHeight + ((k * tsh) | 0)) * 600 + j;
-            const pEnd = (200 - halfHeight + (((k + 1) * tsh) | 0)) * 600 + j;
-            for (let p = pStart; p < pEnd; p += 600) {
-              buf32[p] =
-                (255 << 24) |
-                (b << 16) |
-                (g << 8) |
-                r;
+        let result = m.s.filter(data => {
+          return orientation(new Vector(data[0], data[1]), new Vector(data[2], data[3]), PLAYER.p) === 1;
+        }).map(data => {
+          const ls = {};
+          ls.x1 = data[0];
+          ls.y1 = data[1];
+          ls.x2 = data[2];
+          ls.y2 = data[3];
+          ls.t = data[4];
+          ls.s = data[5];
+
+          return getIntersectionData(ray, ls, angle);
+        }).reduce((a, c) => {
+          return (c.d !== -1 && c.d < a.d) ? c : a;
+        }, {
+          d: Number.MAX_SAFE_INTEGER
+        });
+        return result;
+      }
+
+      // Horrible abomination that I ported from another one of my projects
+      // Don't be like me, use sensible variable names
+      function getIntersectionData(r, l, angle, checkWithinEndpoints = true) {
+        const i1to2x = r.x2 - r.x1;
+        const i1to2y = r.y2 - r.y1;
+        const i3to4x = l.x2 - l.x1;
+        const i3to4y = l.y2 - l.y1;
+
+        if ((i1to2y / i1to2x) === (i3to4y / i3to4x)) return {
+          d: -1
+        };
+
+        const id = i1to2x * i3to4y - i1to2y * i3to4x;
+
+        if (id === 0) return {
+          d: -1
+        };
+
+        const i3to1x = r.x1 - l.x1;
+        const i3to1y = r.y1 - l.y1;
+        const ir = (i3to1y * i3to4x - i3to1x * i3to4y) / id;
+        const is = (i3to1y * i1to2x - i3to1x * i1to2y) / id;
+
+        if (checkWithinEndpoints && (ir < 0 || is < 0 || is > 1)) return {
+          d: -1
+        };
+
+        const iix = (r.x2 - r.x1) * ir + r.x1;
+        const iiy = (r.y2 - r.y1) * ir + r.y1;
+
+        const dx = iix - r.x1;
+        const dy = iiy - r.y1;
+
+        const idx = iix - l.x1;
+        const idy = iiy - l.y1;
+
+        const io = Math.sqrt(idx * idx + idy * idy);
+        if (l.t === 14) print(l);
+        return {
+          d: Math.sqrt(dx * dx + dy * dy) * Math.cos(angle),
+          x: io,
+          t: l.t,
+          s: l.s,
+          l: l,
+          iix,
+          iiy
+        };
+      }
+
+      function renderLines(rayData) {
+        for (let i = 0; i < rayData.length; i++) {
+          rd = rayData[i];
+          const halfHeight = (600 / rd.d / 2) | 0;
+          const texture = m.t[rd.t];
+          const col = texture[((rd.x * rd.s * 10) | 0) % texture.length];
+          const tsh = 600 / rd.d / 20
+          const jStart = (i * 600 / RX);
+          const jEnd = (i * 600 / RX) + 600 / RX;
+          for (let j = jStart; j < jEnd; j++) {
+            for (let k = 0; k < 20; k += 1) {
+              const c = hslToRgb(m.p[col[k | 0 % 20]]);
+              const r = c[0];
+              const g = c[1];
+              const b = c[2];
+              const pStart = (200 - halfHeight + ((k * tsh) | 0)) * 600 + j;
+              const pEnd = (200 - halfHeight + (((k + 1) * tsh) | 0)) * 600 + j;
+              for (let p = pStart; p < pEnd; p += 600) {
+                buf32[p] =
+                  (255 << 24) |
+                  (b << 16) |
+                  (g << 8) |
+                  r;
+              }
             }
           }
         }
       }
-    }
 
-    function drawFloor(angles, rd) {
-      let minH = Number.MAX_SAFE_INTEGER;
-      for (let i = 0; i < 600; i++) {
-        const halfHeight = (600 / rd[i].d / 2) | 0;
-        if (halfHeight < minH) minH = halfHeight;
-      }
-
-      const texture = m.t[m.f];
-      for (let y = 0; y < 200 - minH; y++) {
-        const ray = {};
-        ray.x1 = Math.cos(angles[0] + PLAYER.h.heading());
-        ray.y1 = Math.sin(angles[0] + PLAYER.h.heading());
-        ray.x2 = Math.cos(angles[angles.length - 1] + PLAYER.h.heading());
-        ray.y2 = Math.sin(angles[angles.length - 1] + PLAYER.h.heading());
-
-        const p = y - 400 / 2;
-        const posZ = -400;
-
-        const rowDistance = posZ / p;
-
-        const floorStepX = rowDistance * (ray.x2 - ray.x1) / 600;
-        const floorStepY = rowDistance * (ray.y2 - ray.y1) / 600;
-
-        let floorX = PLAYER.p.x + rowDistance * ray.x1;
-        let floorY = PLAYER.p.y + rowDistance * ray.y1;
-
-        for (let x = 0; x < 600; ++x) {
-          const tx = (((10 * floorX | 0) % 20) + 20) % 20;
-          const ty = (((10 * floorY | 0) % 20) + 20) % 20;
-          floorX += floorStepX;
-          floorY += floorStepY;
-
-          const t = texture[ty][tx];
-          const hsl = m.p[t];
-          const hslLighter = [hsl[0], hsl[1], hsl[2]];
-          hslLighter[2] = Math.min(hslLighter[2] * 1.5, 100) | 0;
-
-          const c = hslToRgb(hsl);
-          const cl = hslToRgb(hslLighter);
-
-          buf32[x + 600 * y] =
-            (255 << 24) |
-            (cl[2] << 16) |
-            (cl[1] << 8) |
-            cl[0];
-          buf32[x + 600 * (400 - y - 1)] =
-            (255 << 24) |
-            (c[2] << 16) |
-            (c[1] << 8) |
-            c[0];
+      function drawFloor(angles, rd) {
+        let minH = Number.MAX_SAFE_INTEGER;
+        for (let i = 0; i < 600; i++) {
+          const halfHeight = (600 / rd[i].d / 2) | 0;
+          if (halfHeight < minH) minH = halfHeight;
         }
-      }
-    }
 
-    function collide(oldPos, dir) {
-      let closest = m.s
-        .filter(ls => orientation(new Vector(ls[0], ls[1]), new Vector(ls[2], ls[3]), oldPos) === 1)
-        .map(ls => distToLS(ls, PLAYER.p))
-        .filter(d => d[0] < PLAYER.b);
-      closest = closest
-        .reduce((a, c) => {
-          return (c[0] !== -1 && c[0] < a[0]) ? c : a;
-        }, [Number.MAX_SAFE_INTEGER, null]);
-      if (closest[0] < PLAYER.b) {
-        const l = closest[1];
-        const normal = new Vector((-1 * (l[3] - l[1])), l[2] - l[0]).normalize();
-        normal.mult(orientation(new Vector(l[0], l[1]), new Vector(l[2], l[3]), oldPos));
+        const texture = m.t[m.f];
+        for (let y = 0; y < 200 - minH; y++) {
+          const ray = {};
+          ray.x1 = Math.cos(angles[0] + PLAYER.h.heading());
+          ray.y1 = Math.sin(angles[0] + PLAYER.h.heading());
+          ray.x2 = Math.cos(angles[angles.length - 1] + PLAYER.h.heading());
+          ray.y2 = Math.sin(angles[angles.length - 1] + PLAYER.h.heading());
 
-        const intersectionLine = {};
-        intersectionLine.x1 = l[0] + normal.x * -1 * PLAYER.b;
-        intersectionLine.y1 = l[1] + normal.y * -1 * PLAYER.b;
-        intersectionLine.x2 = l[2] + normal.x * -1 * PLAYER.b;
-        intersectionLine.y2 = l[3] + normal.y * -1 * PLAYER.b;
+          const p = y - 400 / 2;
+          const posZ = -400;
 
-        const ray = {};
-        ray.x1 = oldPos.x;
-        ray.y1 = oldPos.y;
-        ray.x2 = PLAYER.p.x;
-        ray.y2 = PLAYER.p.y;
+          const rowDistance = posZ / p;
 
-        const collision = getIntersectionData(ray, intersectionLine, 0, false);
-        const collisionLocation = new Vector(collision.iix, collision.iiy);
+          const floorStepX = rowDistance * (ray.x2 - ray.x1) / 600;
+          const floorStepY = rowDistance * (ray.y2 - ray.y1) / 600;
 
-        const length = PLAYER.p.copy().sub(collisionLocation).dot(normal) * dir;
+          let floorX = PLAYER.p.x + rowDistance * ray.x1;
+          let floorY = PLAYER.p.y + rowDistance * ray.y1;
 
-        PLAYER.p.add(normal.copy().mult(-1).mult(dir).mult(length));
+          for (let x = 0; x < 600; ++x) {
+            const tx = (((10 * floorX | 0) % 20) + 20) % 20;
+            const ty = (((10 * floorY | 0) % 20) + 20) % 20;
+            floorX += floorStepX;
+            floorY += floorStepY;
 
-        let collisionDuringSlide = false;
+            const t = texture[ty][tx];
+            const hsl = m.p[t];
+            const hslLighter = [hsl[0], hsl[1], hsl[2]];
+            hslLighter[2] = Math.min(hslLighter[2] * 1.5, 100) | 0;
 
-        for (const ls of m.s) {
-          const thing = distToLS(ls, PLAYER.p);
-          if (thing[0] < PLAYER.b * 0.8) {
-            collisionDuringSlide = true;
+            const c = hslToRgb(hsl);
+            const cl = hslToRgb(hslLighter);
+
+            buf32[x + 600 * y] =
+              (255 << 24) |
+              (cl[2] << 16) |
+              (cl[1] << 8) |
+              cl[0];
+            buf32[x + 600 * (400 - y - 1)] =
+              (255 << 24) |
+              (c[2] << 16) |
+              (c[1] << 8) |
+              c[0];
           }
         }
+      }
 
-        if (collisionDuringSlide) {
-          PLAYER.p = oldPos;
+      function collide(oldPos, dir) {
+        let closest = m.s
+          .filter(ls => orientation(new Vector(ls[0], ls[1]), new Vector(ls[2], ls[3]), oldPos) === 1)
+          .map(ls => distToLS(ls, PLAYER.p))
+          .filter(d => d[0] < PLAYER.b);
+        closest = closest
+          .reduce((a, c) => {
+            return (c[0] !== -1 && c[0] < a[0]) ? c : a;
+          }, [Number.MAX_SAFE_INTEGER, null]);
+        if (closest[0] < PLAYER.b) {
+          const l = closest[1];
+          const normal = new Vector((-1 * (l[3] - l[1])), l[2] - l[0]).normalize();
+          normal.mult(orientation(new Vector(l[0], l[1]), new Vector(l[2], l[3]), oldPos));
+
+          const intersectionLine = {};
+          intersectionLine.x1 = l[0] + normal.x * -1 * PLAYER.b;
+          intersectionLine.y1 = l[1] + normal.y * -1 * PLAYER.b;
+          intersectionLine.x2 = l[2] + normal.x * -1 * PLAYER.b;
+          intersectionLine.y2 = l[3] + normal.y * -1 * PLAYER.b;
+
+          const ray = {};
+          ray.x1 = oldPos.x;
+          ray.y1 = oldPos.y;
+          ray.x2 = PLAYER.p.x;
+          ray.y2 = PLAYER.p.y;
+
+          const collision = getIntersectionData(ray, intersectionLine, 0, false);
+          const collisionLocation = new Vector(collision.iix, collision.iiy);
+
+          const length = PLAYER.p.copy().sub(collisionLocation).dot(normal) * dir;
+
+          PLAYER.p.add(normal.copy().mult(-1).mult(dir).mult(length));
+
+          let collisionDuringSlide = false;
+
+          for (const ls of m.s) {
+            const thing = distToLS(ls, PLAYER.p);
+            if (thing[0] < PLAYER.b * 0.8) {
+              collisionDuringSlide = true;
+            }
+          }
+
+          if (collisionDuringSlide) {
+            PLAYER.p = oldPos;
+          }
+          
+          DEBUG.oldPos = oldPos;
+          DEBUG.collisionDuringSlide = collisionDuringSlide;
+          DEBUG.collisionLocation = collisionLocation;
+          DEBUG.newPos = PLAYER.p;
+          DEBUG.iPos = oldPos.copy().add(PLAYER.h.copy().mult(dir))
+          DEBUG.normal = normal;
+          DEBUG.length = length;
+          DEBUG.dir = dir;
+          DEBUG.intersectionLine = intersectionLine;
+          DEBUG.l = l;
+          
+          return;
         }
-        
-        return;
-      }
-    }
-
-    function distToLS(l, c) {
-      const p1 = new Vector(l[0], l[1]);
-      const p2 = new Vector(l[2], l[3]);
-      const ia = c.x - p1.x;
-      const ib = c.y - p1.y;
-      const ic = p2.x - p1.x;
-      const id = p2.y - p1.y;
-
-      const dot = ia * ic + ib * id;
-      const len_sq = ic * ic + id * id;
-
-      let param = -1;
-      if (len_sq != 0) param = dot / len_sq;
-
-      let xx, yy;
-
-      if (param < 0) {
-        xx = p1.x;
-        yy = p1.y;
-      } else if (param > 1) {
-        xx = p2.x;
-        yy = p2.y;
-      } else {
-        xx = p1.x + param * ic;
-        yy = p1.y + param * id;
       }
 
-      const dx = c.x - xx;
-      const dy = c.y - yy;
+      function distToLS(l, c) {
+        const p1 = new Vector(l[0], l[1]);
+        const p2 = new Vector(l[2], l[3]);
+        const ia = c.x - p1.x;
+        const ib = c.y - p1.y;
+        const ic = p2.x - p1.x;
+        const id = p2.y - p1.y;
 
-      const d = Math.sqrt(dx * dx + dy * dy);
-      return [d, l];
-    }
+        const dot = ia * ic + ib * id;
+        const len_sq = ic * ic + id * id;
 
-    function hslToRgb(hsl) {
-      const h = hsl[0] / 360;
-      const s = hsl[1] / 100;
-      const l = hsl[2] / 100;
-      let r, g, b;
+        let param = -1;
+        if (len_sq != 0) param = dot / len_sq;
 
-      if (s == 0) {
-        r = g = b = l; // achromatic
-      } else {
-        const hue2rgb = function hue2rgb(p, q, t) {
-          if (t < 0) t += 1;
-          if (t > 1) t -= 1;
-          if (t < 1 / 6) return p + (q - p) * 6 * t;
-          if (t < 1 / 2) return q;
-          if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-          return p;
+        let xx, yy;
+
+        if (param < 0) {
+          xx = p1.x;
+          yy = p1.y;
+        } else if (param > 1) {
+          xx = p2.x;
+          yy = p2.y;
+        } else {
+          xx = p1.x + param * ic;
+          yy = p1.y + param * id;
         }
 
-        var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-        var p = 2 * l - q;
-        r = hue2rgb(p, q, h + 1 / 3);
-        g = hue2rgb(p, q, h);
-        b = hue2rgb(p, q, h - 1 / 3);
+        const dx = c.x - xx;
+        const dy = c.y - yy;
+
+        const d = Math.sqrt(dx * dx + dy * dy);
+        return [d, l];
       }
 
-      return [r * 255 | 0, g * 255 | 0, b * 255 | 0];
-    }
+      function hslToRgb(hsl) {
+        const h = hsl[0] / 360;
+        const s = hsl[1] / 100;
+        const l = hsl[2] / 100;
+        let r, g, b;
 
-    function orientation(a, b, c) {
-      return ((b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y)) < 0 ? 1 : -1;
-    }
+        if (s == 0) {
+          r = g = b = l; // achromatic
+        } else {
+          const hue2rgb = function hue2rgb(p, q, t) {
+            if (t < 0) t += 1;
+            if (t > 1) t -= 1;
+            if (t < 1 / 6) return p + (q - p) * 6 * t;
+            if (t < 1 / 2) return q;
+            if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+            return p;
+          }
+
+          var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+          var p = 2 * l - q;
+          r = hue2rgb(p, q, h + 1 / 3);
+          g = hue2rgb(p, q, h);
+          b = hue2rgb(p, q, h - 1 / 3);
+        }
+
+        return [r * 255 | 0, g * 255 | 0, b * 255 | 0];
+      }
+
+      function orientation(a, b, c) {
+        return ((b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y)) < 0 ? 1 : -1;
+      }
+    })();
   </script>
 </body>
 
