@@ -4,6 +4,23 @@
 
 <head>
   <title>Peril's Raycaster</title>
+    <!-- Primary Meta Tags -->
+  <meta name="title" content="Peril's Raycaster">
+  <meta name="description" content="A CPU only raycaster rendering engine with texturing, and a WebGL CRT shader.">
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://cinderwolf.net/projects/raycaster/">
+  <meta property="og:title" content="Peril's Raycaster">
+  <meta property="og:description" content="A CPU only raycaster rendering engine with texturing, and a WebGL CRT shader.">
+  <meta property="og:image" content="">
+
+  <!-- Twitter -->
+  <meta property="twitter:card" content="summary_large_image">
+  <meta property="twitter:url" content="https://cinderwolf.net/projects/raycaster/">
+  <meta property="twitter:title" content="Peril's Raycaster">
+  <meta property="twitter:description" content="A CPU only raycaster rendering engine with texturing, and a WebGL CRT shader.">
+  <meta property="twitter:image" content="">
   <style>
     body {
       background-color: black;
@@ -382,7 +399,6 @@
         ]), gl.STATIC_DRAW);
       }
 
-      <!-- setRectangle(gl, -0.9, -0.9, 0.9, 0.9); -->
       setRectangle(gl, -1, -1, 1, 1);
 
       const texcoordBuffer = gl.createBuffer();
