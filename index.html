@@ -506,6 +506,10 @@
         }
       }
 
+      window.tp = function(x, y) {
+        PLAYER.p.set(x, y);
+      }
+
       function draw() {
         const angles = getAngles()
         const rd = castRays(angles);
